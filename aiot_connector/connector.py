@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 import dateutil.parser
 import json
-import pprint
 import psycopg2
-import random
 import requests
 
 import settings
@@ -61,7 +59,7 @@ def create_device_from_selector(cur, selector):
 
     req = requests.get('https://http.cloud.tiny-mesh.com/v1/device/%s/%s' % (network_key, device_key), auth=(settings.TM_USERNAME, settings.TM_PASSWORD), stream=True)
     device_data = req.json()
-    
+
     cur.execute("""
         INSERT INTO
             device
@@ -98,12 +96,12 @@ def process_json(cur, data):
             'movement': bool(data['proto/tm']['digital_io_5']),
             'noise':  (data['proto/tm']['digital_io_1']/ 2048),
             'temp': ((((((data['proto/tm']['analog_io_1'] & 65535) / 4) / 16382) * 165) - 40) * 100) / 100,
-            'moist': (data['proto/tm']['locator'] >> 16) 
+            'moist': (data['proto/tm']['locator'] >> 16)
         }
 
         #sensor_data = {
         #    'temp': (((((proto['locator'] & 65535) / 4) / 16382) * 165) - 40),
-        #    'co2': proto['msg_data'],                                                
+        #    'co2': proto['msg_data'],
         #    'light': pow((proto['analog_io_0'] * 0.0015658), 10),
         #    'moist': ((proto['locator'] >> 16),
         #    'movement': bool(proto['digital_io_5']),
@@ -139,15 +137,24 @@ def start_loop(cur):
 
 
 def main():
-    conn = psycopg2.connect(
-        database = settings.DB_NAME,
-        user = settings.DB_USER,
-        password = settings.DB_PASSWORD,
-        host = settings.DB_HOST,
-    )
-    conn.autocommit = True
-    cur = conn.cursor()
+    psycopg_kwargs = {
+        'database': settings.DB_NAME,
+        'user': settings.DB_USER,
+    }
 
+    # Makes it possible to set it to `None` if you want to connect using
+    # local unix sockets.
+    if settings.DB_HOST:
+        psycopg_kwargs['host'] = settings.DB_HOST
+
+    if settings.DB_PASSWORD:
+        psycopg_kwargs['password'] = settings.DB_PASSWORD
+
+    print psycopg_kwargs
+    conn = psycopg2.connect(**psycopg_kwargs)
+    conn.autocommit = True
+
+    cur = conn.cursor()
     start_loop(cur)
 
 
