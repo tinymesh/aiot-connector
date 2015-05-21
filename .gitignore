@@ -1,0 +1,10 @@
+# shit
+*.swp
+*.swo
+*.swn
+*.pyc
+
+# project
+/.virtualenv
+/.vagrant
+/aiot_connector/settings/sensitive_settings.py

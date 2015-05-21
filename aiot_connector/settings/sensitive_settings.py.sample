@@ -1,0 +1,10 @@
+# TinyMesh cloud API
+TM_USERNAME = 'user@host.no'
+TM_PASSWORD = 'teh_password'
+TM_NETWORK = 'NETWORK'
+
+# Database
+DB_HOST = 'dbhost'
+DB_NAME = 'dbname'
+DB_USER = 'dbuser'
+DB_PASSWORD = 'dbpassword'
