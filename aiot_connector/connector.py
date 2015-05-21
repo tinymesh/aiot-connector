@@ -97,12 +97,20 @@ def process_building_sensor_data(cur, device, timestamp, data):
 
     proto = data['proto/tm']
     sensor_data = {
+        #'co2': proto['msg_data'],
+        #'light': pow(10, data['proto/tm']['analog_io_0'] * 0.0015658),
+        #'movement': bool(data['proto/tm']['digital_io_5']),
+        #'noise':  (data['proto/tm']['digital_io_1']/ 2048),
+        #'temp': ((((((data['proto/tm']['analog_io_1'] & 65535) / 4) / 16382) * 165) - 40) * 100) / 100,
+        #'moist': (data['proto/tm']['locator'] >> 16)
+
+        'temp': (((((proto['locator'] & 65535) / 4.0) / 16382.0) * 165.0) - 40.0),
         'co2': proto['msg_data'],
-        'light': pow(10, data['proto/tm']['analog_io_0'] * 0.0015658),
-        'movement': bool(data['proto/tm']['digital_io_5']),
-        'noise':  (data['proto/tm']['digital_io_1']/ 2048),
-        'temp': ((((((data['proto/tm']['analog_io_1'] & 65535) / 4) / 16382) * 165) - 40) * 100) / 100,
-        'moist': (data['proto/tm']['locator'] >> 16)
+        'light': pow((proto['analog_io_0'] * 0.0015658), 10),
+        'moist': ((proto['locator'] >> 16) / 16382.0) * 100.0,
+        'movement': bool(proto['digital_io_5']),
+        'noise': (90 - (30 * (proto['analog_io_1'] / 2048.0))),
+
     }
 
     save_room_state(cur, device, timestamp, sensor_data)
