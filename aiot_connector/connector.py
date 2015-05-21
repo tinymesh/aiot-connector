@@ -7,7 +7,7 @@ import requests
 import settings
 
 
-def save_message(cur, timestamp, device, sensor_data):
+def save_room_state(cur, device, timestamp, sensor_data):
     sql = """
         INSERT INTO room_state
         values (
@@ -33,11 +33,23 @@ def save_message(cur, timestamp, device, sensor_data):
         'light': sensor_data['light'],
     }
 
-    if settings.DEBUG:
-        cur.mogrify(sql, data)
-
     cur.execute(sql, data)
 
+def save_power_measure(cur, device, timestamp, sensor_data):
+    sql = """
+        INSERT INTO
+            power_meter_timeseries
+            (device_key, datetime, pulses)
+        VALUES
+            (%(device_key)s, %(timestamp)s, %(pulses)s)
+    """
+    data = {
+        'device_key': device['key'],
+        'timestamp': timestamp,
+        'pulses': sensor_data['pulses'],
+    }
+
+    cur.execute(sql, data)
 
 def get_device_from_selector(cur, selector):
     network_key, device_key = selector
@@ -57,7 +69,8 @@ def get_device_from_selector(cur, selector):
 def create_device_from_selector(cur, selector):
     network_key, device_key = selector
 
-    req = requests.get('https://http.cloud.tiny-mesh.com/v1/device/%s/%s' % (network_key, device_key), auth=(settings.TM_USERNAME, settings.TM_PASSWORD), stream=True)
+    url = 'https://http.cloud.tiny-mesh.com/v1/device/%s/%s' % (network_key, device_key)
+    req = requests.get(url, auth=(settings.TM_USERNAME, settings.TM_PASSWORD), stream=True)
     device_data = req.json()
 
     cur.execute("""
@@ -77,47 +90,60 @@ def create_device_from_selector(cur, selector):
     return device
 
 
-def process_json(cur, data):
-    timestamp = dateutil.parser.parse(data['datetime'])
+def process_building_sensor_data(cur, device, timestamp, data):
+    if device['room'] is None:
+        print 'Found no room for selector %s' % '/'.join(data['selector'])
+        return False
 
+    proto = data['proto/tm']
+    sensor_data = {
+        'co2': proto['msg_data'],
+        'light': pow(10, data['proto/tm']['analog_io_0'] * 0.0015658),
+        'movement': bool(data['proto/tm']['digital_io_5']),
+        'noise':  (data['proto/tm']['digital_io_1']/ 2048),
+        'temp': ((((((data['proto/tm']['analog_io_1'] & 65535) / 4) / 16382) * 165) - 40) * 100) / 100,
+        'moist': (data['proto/tm']['locator'] >> 16)
+    }
+
+    save_room_state(cur, device, timestamp, sensor_data)
+    return True
+
+
+def process_power_meter_data(cur, device, timestamp, data):
+    proto = data['proto/tm']
+    sensor_data = {
+        'pulses': proto['msg_data'],
+    }
+
+    save_power_measure(cur, device, timestamp, sensor_data)
+    return True
+
+
+def process_json(cur, data):
     device = get_device_from_selector(cur, data['selector'])
     if device is None:
         device = create_device_from_selector(cur, data['selector'])
 
-    if device['type'] == 'building-sensor-v2':
-        if device['room'] is None:
-            print 'Found no room for selector %s' % '/'.join(data['selector'])
-            return False
+    sensor_map = {
+        'building-sensor-v2': process_building_sensor_data,
+        'power-meter': process_power_meter_data,
+    }
 
-        proto = data['proto/tm']
-        sensor_data = {
-            'co2': proto['msg_data'],
-            'light': pow(10, data['proto/tm']['analog_io_0'] * 0.0015658),
-            'movement': bool(data['proto/tm']['digital_io_5']),
-            'noise':  (data['proto/tm']['digital_io_1']/ 2048),
-            'temp': ((((((data['proto/tm']['analog_io_1'] & 65535) / 4) / 16382) * 165) - 40) * 100) / 100,
-            'moist': (data['proto/tm']['locator'] >> 16)
-        }
+    process_fn = sensor_map.get(device['type'], None)
 
-        #sensor_data = {
-        #    'temp': (((((proto['locator'] & 65535) / 4) / 16382) * 165) - 40),
-        #    'co2': proto['msg_data'],
-        #    'light': pow((proto['analog_io_0'] * 0.0015658), 10),
-        #    'moist': ((proto['locator'] >> 16),
-        #    'movement': bool(proto['digital_io_5']),
-        #    'noise': (90 - (30 * (proto['analog_io_1'] / 2048)))
-        #}
+    if process_fn:
+        if settings.DEBUG:
+            print 'Using %s to process data' % process_fn.__name__
+        timestamp = dateutil.parser.parse(data['datetime'])
+        return process_fn(cur, device, timestamp, data)
 
-        save_message(cur, timestamp, device, sensor_data)
-        return True
-
-    elif device['type'] == 'power-meter':
-        # Helge fikser her
-        print u'STRØM STRØM STRØØØØØØØØØØØØØØØØØØM!!!'
 
 def start_loop(cur):
-    req = requests.get('https://http.cloud.tiny-mesh.com/v1/message-query/%s/?stream=stream/%s&query=proto/tm.type:event' % (settings.TM_NETWORK, settings.TM_NETWORK),
-                       auth=(settings.TM_USERNAME, settings.TM_PASSWORD), stream=True)
+    url = 'https://http.cloud.tiny-mesh.com/v1/message-query/%s/?stream=stream/%s&query=proto/tm.type:event' % (
+        settings.TM_NETWORK,
+        settings.TM_NETWORK,
+    )
+    req = requests.get(url, auth=(settings.TM_USERNAME, settings.TM_PASSWORD), stream=True)
 
     for line in req.iter_lines():
         if line:
@@ -125,15 +151,11 @@ def start_loop(cur):
                 continue
 
             if settings.DEBUG:
+                print '-' * 80
                 print line
 
             data = json.loads(line[6:])
-            success = process_json(cur, data)
-
-            if success:
-                print 'SUCCESS!'
-            else:
-                print 'FAIL :-('
+            process_json(cur, data)
 
 
 def main():
@@ -150,7 +172,6 @@ def main():
     if settings.DB_PASSWORD:
         psycopg_kwargs['password'] = settings.DB_PASSWORD
 
-    print psycopg_kwargs
     conn = psycopg2.connect(**psycopg_kwargs)
     conn.autocommit = True
 
