@@ -7,53 +7,59 @@ import requests
 import settings
 
 
-def save_room_state(cur, device, timestamp, sensor_data):
-    sql = """
-        INSERT INTO room_state
-        values (
-            %(timestamp)s,
-            %(room_key)s,
-            %(co2)s,
-            %(noise)s,
-            %(movement)s,
-            %(temp)s,
-            %(moist)s,
-            %(light)s,
-            DEFAULT
-        )
-    """
-    data = {
-        'room_key': device['room'],
-        'timestamp': timestamp,
-        'co2': sensor_data['co2'],
-        'noise': sensor_data['noise'],
-        'movement': sensor_data['movement'],
-        'temp': sensor_data['temp'],
-        'moist': sensor_data['moist'],
-        'light': sensor_data['light'],
+def save_room_state_measures(cur, device, timestamp, sensor_data, packet_number):
+    type_to_table_name = {
+        'temp': 'ts_temperature',
+        'co2': 'ts_co2',
+        'light': 'ts_light',
+        'moist': 'ts_moist',
+        'movement': 'ts_movement',
+        'noise': 'ts_noise',
     }
 
-    cur.execute(sql, data)
+    for type, value in sensor_data.items():
+        table_name = type_to_table_name[type]
 
-def save_power_measure(cur, device, timestamp, sensor_data):
+        sql = """
+            INSERT INTO
+                """ + table_name + """
+                (datetime, device_key, value, packet_number)
+            VALUES (
+                %(datetime)s,
+                %(device_key)s,
+                %(value)s,
+                %(packet_number)s
+            )
+        """
+        data = {
+            'datetime': timestamp,
+            'device_key': device['key'],
+            'value': value,
+            'packet_number': packet_number,
+        }
+
+        cur.execute(sql, data)
+
+def save_power_measure(cur, device, timestamp, sensor_data, packet_number):
     sql = """
         INSERT INTO
-            power_meter_timeseries
-            (device_key, datetime, pulses)
+            ts_pulses
+            (datetime, device_key, value, packet_number)
         VALUES
-            (%(device_key)s, %(timestamp)s, %(pulses)s)
+            (%(datetime)s, %(device_key)s, %(value)s, %(packet_number)s)
     """
     data = {
-        'device_key': device['key'],
-        'timestamp': timestamp,
-        'pulses': sensor_data['pulses'],
+            'datetime': timestamp,
+            'device_key': device['key'],
+            'value': sensor_data['pulses'],
+            'packet_number': packet_number,
     }
 
     cur.execute(sql, data)
 
 def get_device_from_selector(cur, selector):
     network_key, device_key = selector
-    cur.execute('SELECT key, room, type FROM device WHERE key = %(device_key)s', {
+    cur.execute('SELECT key, type FROM device WHERE key = %(device_key)s', {
         'device_key': device_key,
     })
     ret = cur.fetchone()
@@ -61,8 +67,7 @@ def get_device_from_selector(cur, selector):
     if ret:
         return {
             'key': ret[0],
-            'room': ret[1],
-            'type': ret[2],
+            'type': ret[1],
         }
 
 
@@ -91,29 +96,19 @@ def create_device_from_selector(cur, selector):
 
 
 def process_building_sensor_data(cur, device, timestamp, data):
-    if device['room'] is None:
-        print 'Found no room for selector %s' % '/'.join(data['selector'])
-        return False
-
     proto = data['proto/tm']
     sensor_data = {
-        #'co2': proto['msg_data'],
-        #'light': pow(10, data['proto/tm']['analog_io_0'] * 0.0015658),
-        #'movement': bool(data['proto/tm']['digital_io_5']),
-        #'noise':  (data['proto/tm']['digital_io_1']/ 2048),
-        #'temp': ((((((data['proto/tm']['analog_io_1'] & 65535) / 4) / 16382) * 165) - 40) * 100) / 100,
-        #'moist': (data['proto/tm']['locator'] >> 16)
-
         'temp': (((((proto['locator'] & 65535) / 4.0) / 16382.0) * 165.0) - 40.0),
         'co2': proto['msg_data'],
-        'light': pow((proto['analog_io_0'] * 0.0015658), 10),
+        'light': pow(proto['analog_io_0'] * 0.0015658, 10),
         'moist': ((proto['locator'] >> 16) / 16382.0) * 100.0,
         'movement': bool(proto['digital_io_5']),
-        'noise': (90 - (30 * (proto['analog_io_1'] / 2048.0))),
-
+        'noise': 90.0 - (30.0 * (proto['analog_io_1'] / 2048.0)),
     }
 
-    save_room_state(cur, device, timestamp, sensor_data)
+    packet_number = proto['packet_number']
+
+    save_room_state_measures(cur, device, timestamp, sensor_data, packet_number)
     return True
 
 
@@ -122,8 +117,9 @@ def process_power_meter_data(cur, device, timestamp, data):
     sensor_data = {
         'pulses': proto['msg_data'],
     }
+    packet_number = proto['packet_number']
 
-    save_power_measure(cur, device, timestamp, sensor_data)
+    save_power_measure(cur, device, timestamp, sensor_data, packet_number)
     return True
 
 
