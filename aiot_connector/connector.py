@@ -1,61 +1,12 @@
-# -*- coding: utf-8 -*-
-import dateutil.parser
+# coding: utf-8
 import json
 import psycopg2
 import requests
 
+import building
+import circuit
 import settings
 
-
-def save_room_state_measures(cur, device, timestamp, sensor_data, packet_number):
-    type_to_table_name = {
-        'temp': 'ts_temperature',
-        'co2': 'ts_co2',
-        'light': 'ts_light',
-        'moist': 'ts_moist',
-        'movement': 'ts_movement',
-        'noise': 'ts_noise',
-    }
-
-    for type, value in sensor_data.items():
-        table_name = type_to_table_name[type]
-
-        sql = """
-            INSERT INTO
-                """ + table_name + """
-                (datetime, device_key, value, packet_number)
-            VALUES (
-                %(datetime)s,
-                %(device_key)s,
-                %(value)s,
-                %(packet_number)s
-            )
-        """
-        data = {
-            'datetime': timestamp,
-            'device_key': device['key'],
-            'value': value,
-            'packet_number': packet_number,
-        }
-
-        cur.execute(sql, data)
-
-def save_power_measure(cur, device, timestamp, sensor_data, packet_number):
-    sql = """
-        INSERT INTO
-            ts_pulses
-            (datetime, device_key, value, packet_number)
-        VALUES
-            (%(datetime)s, %(device_key)s, %(value)s, %(packet_number)s)
-    """
-    data = {
-            'datetime': timestamp,
-            'device_key': device['key'],
-            'value': sensor_data['pulses'],
-            'packet_number': packet_number,
-    }
-
-    cur.execute(sql, data)
 
 def get_device_from_selector(cur, selector):
     network_key, device_key = selector
@@ -95,51 +46,20 @@ def create_device_from_selector(cur, selector):
     return device
 
 
-def process_building_sensor_data(cur, device, timestamp, data):
-    proto = data['proto/tm']
-    sensor_data = {
-        'temp': (((((proto['locator'] & 65535) / 4.0) / 16382.0) * 165.0) - 40.0),
-        'co2': proto['msg_data'],
-        'light': pow(proto['analog_io_0'] * 0.0015658, 10),
-        'moist': ((proto['locator'] >> 16) / 16382.0) * 100.0,
-        'movement': bool(proto['digital_io_5']),
-        'noise': 90.0 - (30.0 * (proto['analog_io_1'] / 2048.0)),
-    }
-
-    packet_number = proto['packet_number']
-
-    save_room_state_measures(cur, device, timestamp, sensor_data, packet_number)
-    return True
-
-
-def process_power_meter_data(cur, device, timestamp, data):
-    proto = data['proto/tm']
-    sensor_data = {
-        'pulses': proto['msg_data'],
-    }
-    packet_number = proto['packet_number']
-
-    save_power_measure(cur, device, timestamp, sensor_data, packet_number)
-    return True
-
-
-def process_json(cur, data):
-    device = get_device_from_selector(cur, data['selector'])
+def process_json(cur, json_data):
+    device = get_device_from_selector(cur, json_data['selector'])
     if device is None:
-        device = create_device_from_selector(cur, data['selector'])
+        device = create_device_from_selector(cur, json_data['selector'])
 
-    sensor_map = {
-        'building-sensor-v2': process_building_sensor_data,
-        'power-meter': process_power_meter_data,
-    }
-
-    process_fn = sensor_map.get(device['type'], None)
-
-    if process_fn:
-        if settings.DEBUG:
-            print 'Using %s to process data' % process_fn.__name__
-        timestamp = dateutil.parser.parse(data['datetime'])
-        return process_fn(cur, device, timestamp, data)
+    if device['type'] == 'building-sensor-v2':
+        context = building.context_from_json_data(json_data)
+        building.save_sensor_data(cur, device, context)
+        building.save_persons_inside(cur, device, context)
+        building.save_deviations(cur, device, context)
+    elif device['type'] == 'power-meter':
+        context = circuit.context_from_json_data(json_data)
+        circuit.save_pulses(cur, device, context)
+        circuit.save_kwm(cur, device, context)
 
 
 def start_loop(cur):
@@ -158,8 +78,8 @@ def start_loop(cur):
                 print '-' * 80
                 print line
 
-            data = json.loads(line[6:])
-            process_json(cur, data)
+            json_data = json.loads(line[6:])
+            process_json(cur, json_data)
 
 
 def main():
