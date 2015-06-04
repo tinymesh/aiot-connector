@@ -12,7 +12,7 @@ def context_from_json_data(json_data):
             'light': pow(proto['analog_io_0'] * 0.0015658, 10),
             'moist': ((proto['locator'] >> 16) / 16382.0) * 100.0,
             'movement': bool(proto['digital_io_5']),
-            'noise': 90.0 - (30.0 * (proto['analog_io_1'] / 2048.0)),
+            'decibel': 90.0 - (30.0 * (proto['analog_io_1'] / 2048.0)),
         },
         'timestamp': dateutil.parser.parse(json_data['datetime']),
         'packet_number': proto['packet_number'],
@@ -25,7 +25,7 @@ def save_sensor_data(cur, device, context):
         'light': 'ts_light',
         'moist': 'ts_moist',
         'movement': 'ts_movement',
-        'noise': 'ts_noise',
+        'decibel': 'ts_decibel',
     }
 
     for type, value in context['sensor_data'].items():
@@ -62,7 +62,7 @@ def save_persons_inside(cur, device, context):
     """, {
         'timestamp': context['timestamp'],
         'device_key': device['key'],
-        'value': random.randint(10),
+        'value': random.randint(0, 10),
     })
 
 def save_deviations(cur, device, context):
@@ -87,5 +87,5 @@ def save_deviations(cur, device, context):
         """, {
             'datetime': context['timestamp'],
             'device_key': device['key'],
-            'device_type': deviation_type,
+            'deviation_type': deviation_type,
         })
