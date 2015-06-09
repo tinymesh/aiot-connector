@@ -89,3 +89,4 @@ def save_deviations(cur, device, context):
             'device_key': device['key'],
             'deviation_type': deviation_type,
         })
+

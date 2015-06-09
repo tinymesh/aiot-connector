@@ -27,15 +27,61 @@ def save_pulses(cur, device, context):
 
     cur.execute(sql, data)
 
-def save_kwm(cur, device, context):
-    # 1. hent ut siste måling (før denne) aka packet_number = this.packet_number - 1;
-    # 2. trunc context['timestamp'] til siste minutt
-    # 3. sjekk om time diff er 1. hvis ikke, gjør Det Riktige?
-    # 4. push in kwm (bruke time diff som faktor)
-    pass
+def get_kwm_from_two_pulses(cur, device, packet_number):
+    sql = """
+        SELECT datetime, packet_number, value
+        FROM ts_pulses
+        WHERE packet_number in (%(packet_number_1)s, %(packet_number_2)s)
+        AND device_key = %(device_key)s
+        AND datetime > (NOW() - interval '1 day')
+        ORDER BY datetime DESC
+    """
+    data = {
+        'packet_number_1': packet_number,
+        'packet_number_2': (packet_number - 1) % 2**16,
+        'device_key': device['key']
+    }
+    cur.execute(sql, data)
+    last_pulses = cur.fetchall()
 
-def save_energy_productivity(cur, device, context):
-    # 1. hent ut siste kwm + siste produktivitet
-    # 2. del.
-    # 3. push.
-    pass
+    if not last_pulses or last_pulses[0][1] != packet_number:
+        return
+
+    print 'get_kwm_from_two_pulses', last_pulses
+
+    if len(last_pulses) == 1:
+        return last_pulses[0][2] / 10000.0
+    else:
+        seconds_diff = (last_pulses[0][0] - last_pulses[1][0]).total_seconds()
+        multiplier = 60. / seconds_diff #TODO Check why diff if zero sometimes
+
+        calibration_factor = 10000.0
+        return last_pulses[0][2] * multiplier / calibration_factor
+
+def save_kwm(cur, device, context):
+    kwm1 = get_kwm_from_two_pulses(cur, device, context['packet_number'])
+    kwm2 = get_kwm_from_two_pulses(cur, device, (context['packet_number'] - 1) % 2**16)
+
+    print 'save_kwm', kwm1, 'and', kwm2
+
+    if kwm2:
+        kwm_avg = (kwm1 + kwm2) / 2.0
+    else:
+        kwm_avg = kwm1
+
+    print 'avg is', kwm_avg
+
+    sql = """
+        INSERT INTO
+            ts_kwm
+            (datetime, device_key, value)
+        VALUES
+            (%(datetime)s, %(device_key)s, %(value)s)
+    """
+    data = {
+        'datetime': context['timestamp'],
+        'device_key': device['key'],
+        'value': kwm_avg,
+    }
+    cur.execute(sql, data)
+
