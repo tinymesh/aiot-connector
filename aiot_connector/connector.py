@@ -60,6 +60,7 @@ def process_json(cur, json_data):
         context = circuit.context_from_json_data(json_data)
         circuit.save_pulses(cur, device, context)
         circuit.save_kwm(cur, device, context)
+        circuit.generate_kwh(cur, device) #TODO: Doesn't make too much sense that a new measurement triggers this, should probably be in a cronjob
 
 
 def start_loop(cur):
