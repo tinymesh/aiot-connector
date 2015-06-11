@@ -60,14 +60,12 @@ def get_kwm_from_two_pulses(cur, device, packet_number):
     if not last_pulses or last_pulses[0][1] != packet_number:
         return
 
-    if settings.DEBUG:
-        print 'get_kwm_from_two_pulses', last_pulses
-
     if len(last_pulses) == 1:
         return last_pulses[0][2] / 10000.0
     else:
         seconds_diff = (last_pulses[0][0] - last_pulses[1][0]).total_seconds()
-        multiplier = 60. / seconds_diff #TODO Check why diff if zero sometimes
+        #TODO: Check why diff if zero sometimes
+        multiplier = 60. / seconds_diff
 
         calibration_factor = 10000.0
         return last_pulses[0][2] * multiplier / calibration_factor
@@ -76,16 +74,10 @@ def save_kwm(cur, device, context):
     kwm1 = get_kwm_from_two_pulses(cur, device, context['packet_number'])
     kwm2 = get_kwm_from_two_pulses(cur, device, (context['packet_number'] - 1) % 2**16)
 
-    if settings.DEBUG:
-        print 'save_kwm', kwm1, 'and', kwm2
-
     if kwm2:
         kwm_avg = (kwm1 + kwm2) / 2.0
     else:
         kwm_avg = kwm1
-
-    if settings.DEBUG:
-        print 'avg is', kwm_avg
 
     sql = """
         INSERT INTO
