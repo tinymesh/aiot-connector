@@ -129,21 +129,6 @@ def get_last_kwh_timestamp_for_device(cur, device):
     )
     return cur.fetchone()[0]
 
-def kwh_measurement_exists(cur, device, hour_dt):
-    cur.execute("""
-            SELECT *
-            FROM ts_kwh
-            WHERE device_key = %(device_key)s
-            AND datetime = %(datetime)s
-            LIMIT 1
-        """, {
-            'device_key': device['key'],
-            'datetime': hour_dt
-        }
-    )
-    return bool(cur.fetchall())
-
-
 def generate_kwh(cur, device):
     oslo_tz = timezone('Europe/Oslo')
 
@@ -151,7 +136,7 @@ def generate_kwh(cur, device):
     last_kwh_timestamp = get_last_kwh_timestamp_for_device(cur, device)
 
     if last_kwh_timestamp is not None:
-        first_hour_to_check = trunc_datetime_to_hours(last_kwh_timestamp)
+        first_hour_to_check = trunc_datetime_to_hours(last_kwh_timestamp + timedelta(hours=1))
     else:
         first_kwm_timestamp = get_first_kwm_timestamp_for_device(cur, device)
         if first_kwm_timestamp is not None:
@@ -160,11 +145,7 @@ def generate_kwh(cur, device):
             return
 
     for hour_dt in rrule.rrule(rrule.HOURLY, dtstart=first_hour_to_check, until=last_hour):
-        if not kwh_measurement_exists(cur, device, hour_dt):
-            save_kwh(cur, device, hour_dt)
-        else:
-            if settings.DEBUG:
-                print 'Measurement for device %s at hour %s in kwm timeseries already exists' % (device['key'], hour_dt)
+        save_kwh(cur, device, hour_dt)
 
 def save_kwh(cur, device, hour_to_check):
     cur.execute("""
