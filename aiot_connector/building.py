@@ -1,7 +1,6 @@
 # coding: utf-8
 import dateutil.parser
 import math
-import random
 
 def context_from_json_data(json_data):
     proto = json_data['proto/tm']
@@ -32,7 +31,7 @@ def save_sensor_data(cur, device, context):
     for type, value in context['sensor_data'].items():
         table_name = type_to_table_name[type]
 
-        sql = """
+        cur.execute("""
             INSERT INTO
                 """ + table_name + """
                 (datetime, device_key, value, packet_number)
@@ -42,21 +41,18 @@ def save_sensor_data(cur, device, context):
                 %(value)s,
                 %(packet_number)s
             )
-        """
-        data = {
+        """, {
             'datetime': context['timestamp'],
             'device_key': device['key'],
             'value': value,
             'packet_number': context['packet_number'],
-        }
-
-        cur.execute(sql, data)
+        })
 
 def save_persons_inside(cur, device, context):
     current_co2 = context['sensor_data']['co2']
 
     cur.execute("""
-        SELECT (%(current_co2)s - MIN(value)) / STDDEV(value)
+        SELECT (%(current_co2)s - MIN(value)) / STDDEV(value) AS value
         FROM ts_co2
         WHERE device_key = %(device_key)s
         AND value BETWEEN 50 AND 8000
@@ -64,7 +60,7 @@ def save_persons_inside(cur, device, context):
         'device_key': device['key'],
         'current_co2': current_co2,
     })
-    num_persons_inside = math.trunc(cur.fetchone()[0] - 0.2)
+    num_persons_inside = math.trunc(cur.fetchone()['value'] - 0.2)
 
     # Clamp between 0 and 15
     num_persons_inside = min(num_persons_inside, 15)

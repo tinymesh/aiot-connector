@@ -21,21 +21,18 @@ def context_from_json_data(json_data):
 ## Pulses
 
 def save_pulses(cur, device, context):
-    sql = """
+    cur.execute("""
         INSERT INTO
             ts_pulses
             (datetime, device_key, value, packet_number)
         VALUES
             (%(datetime)s, %(device_key)s, %(value)s, %(packet_number)s)
-    """
-    data = {
-            'datetime': context['timestamp'],
-            'device_key': device['key'],
-            'value': context['pulses'],
-            'packet_number': context['packet_number'],
-    }
-
-    cur.execute(sql, data)
+    """, {
+        'datetime': context['timestamp'],
+        'device_key': device['key'],
+        'value': context['pulses'],
+        'packet_number': context['packet_number'],
+    })
 
 
 ## kWm
@@ -57,18 +54,18 @@ def get_kwm_from_two_pulses(cur, device, packet_number):
     cur.execute(sql, data)
     last_pulses = cur.fetchall()
 
-    if not last_pulses or last_pulses[0][1] != packet_number:
+    if not last_pulses or last_pulses[0]['packet_number'] != packet_number:
         return
 
     if len(last_pulses) == 1:
-        return last_pulses[0][2] / 10000.0
+        return last_pulses[0]['value'] / 10000.0
     else:
-        seconds_diff = (last_pulses[0][0] - last_pulses[1][0]).total_seconds()
+        seconds_diff = (last_pulses[0]['datetime'] - last_pulses[1]['datetime']).total_seconds()
         #TODO: Check why diff if zero sometimes
         multiplier = 60. / seconds_diff
 
         calibration_factor = 10000.0
-        return last_pulses[0][2] * multiplier / calibration_factor
+        return last_pulses[0]['value'] * multiplier / calibration_factor
 
 def save_kwm(cur, device, context):
     kwm1 = get_kwm_from_two_pulses(cur, device, context['packet_number'])
@@ -79,19 +76,11 @@ def save_kwm(cur, device, context):
     else:
         kwm_avg = kwm1
 
-    sql = """
-        INSERT INTO
-            ts_kwm
-            (datetime, device_key, value)
-        VALUES
-            (%(datetime)s, %(device_key)s, %(value)s)
-    """
-    data = {
+    cur.execute('INSERT INTO ts_kwm (datetime, device_key, value) VALUES (%(datetime)s, %(device_key)s, %(value)s)', {
         'datetime': context['timestamp'],
         'device_key': device['key'],
         'value': kwm_avg,
-    }
-    cur.execute(sql, data)
+    })
 
 
 ## kWh
@@ -100,31 +89,20 @@ def trunc_datetime_to_hours(datetime):
     return datetime.replace(minute=0, second=0, microsecond=0)
 
 def get_first_kwm_timestamp_for_device(cur, device):
-    cur.execute("""
-            SELECT min(datetime)
-            FROM ts_kwm
-            WHERE device_key = %(device_key)s
-        """, {
-            'device_key': device['key'],
-        }
-    )
-    return cur.fetchone()[0]
+    cur.execute('SELECT min(datetime) FROM ts_kwm WHERE device_key = %(device_key)s', {
+        'device_key': device['key'],
+    })
+    return cur.fetchone()['min']
 
 def get_last_kwh_timestamp_for_device(cur, device):
-    cur.execute("""
-            SELECT max(datetime)
-            FROM ts_kwh
-            WHERE device_key = %(device_key)s
-        """, {
-            'device_key': device['key'],
-        }
-    )
-    return cur.fetchone()[0]
+    cur.execute('SELECT max(datetime) FROM ts_kwh WHERE device_key = %(device_key)s', {
+        'device_key': device['key'],
+    })
+    return cur.fetchone()['max']
 
 def generate_kwh(cur, device):
     oslo_tz = timezone('Europe/Oslo')
 
-    last_hour = trunc_datetime_to_hours(datetime.now(oslo_tz) - timedelta(hours=1))
     last_kwh_timestamp = get_last_kwh_timestamp_for_device(cur, device)
 
     if last_kwh_timestamp is not None:
@@ -136,46 +114,37 @@ def generate_kwh(cur, device):
         else:
             return
 
+    last_hour = trunc_datetime_to_hours(datetime.now(oslo_tz) - timedelta(hours=1))
     for hour_dt in rrule.rrule(rrule.HOURLY, dtstart=first_hour_to_check, until=last_hour):
         save_kwh(cur, device, hour_dt)
 
 def save_kwh(cur, device, hour_to_check):
     cur.execute("""
-            SELECT value
-            FROM ts_kwm
-            WHERE datetime BETWEEN %(dt_start)s AND %(dt_end)s
-            AND device_key = %(device_key)s
+            SELECT
+                (SUM(value) / COUNT(value) * 60.0) AS kwh_scaled,
+                COUNT(value) AS num_kwm_measurements
+            FROM
+                ts_kwm
+            WHERE
+                datetime BETWEEN %(dt_start)s AND %(dt_end)s
+            AND
+                device_key = %(device_key)s
         """, {
             'dt_start': hour_to_check,
             'dt_end': hour_to_check + timedelta(hours=1),
             'device_key': device['key'],
         }
     )
-    rows = cur.fetchall()
+    result = cur.fetchone()
 
-    number_of_kwm_measurements = len(rows)
-
-    if number_of_kwm_measurements < 30:
+    if result['num_kwm_measurements'] < 30:
         if settings.DEBUG:
             print '%d measurements for device %s at hour %s in kwm timeseries (30 required)' % (
-                    number_of_kwm_measurements, device['key'], hour_to_check)
+                    result['num_kwm_measurements'], device['key'], hour_to_check)
         return
 
-    sum = 0.0
-    for row in rows:
-        sum += row[0]
-
-    value = sum / number_of_kwm_measurements * 60.0
-
-    cur.execute("""
-            INSERT INTO
-                ts_kwh
-                (datetime, device_key, value)
-            VALUES
-                (%(datetime)s, %(device_key)s, %(value)s)
-        """, {
-            'datetime': str(hour_to_check),
-            'device_key': device['key'],
-            'value': value,
-        }
-    )
+    cur.execute('INSERT INTO ts_kwh (datetime, device_key, value) VALUES (%(datetime)s, %(device_key)s, %(value)s)', {
+        'datetime': str(hour_to_check),
+        'device_key': device['key'],
+        'value': result['kwh_scaled'],
+    })

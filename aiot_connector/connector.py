@@ -2,6 +2,7 @@
 import json
 import psycopg2
 import requests
+from psycopg2.extras import DictCursor
 
 import building
 import circuit
@@ -13,13 +14,7 @@ def get_device_from_selector(cur, selector):
     cur.execute('SELECT key, type FROM device WHERE key = %(device_key)s', {
         'device_key': device_key,
     })
-    ret = cur.fetchone()
-
-    if ret:
-        return {
-            'key': ret[0],
-            'type': ret[1],
-        }
+    return cur.fetchone()
 
 
 def create_device_from_selector(cur, selector):
@@ -29,13 +24,7 @@ def create_device_from_selector(cur, selector):
     req = requests.get(url, auth=(settings.TM_USERNAME, settings.TM_PASSWORD), stream=True)
     device_data = req.json()
 
-    cur.execute("""
-        INSERT INTO
-            device
-            (key, type, name)
-        VALUES
-            (%(key)s, %(type)s, %(name)s)
-    """, {
+    cur.execute('INSERT INTO device (key, type, name) VALUES (%(key)s, %(type)s, %(name)s)', {
         'key': device_data['key'],
         'type': device_data['type'],
         'name': device_data.get('name', None),
@@ -101,7 +90,7 @@ def main():
     conn = psycopg2.connect(**psycopg_kwargs)
     conn.autocommit = True
 
-    cur = conn.cursor()
+    cur = conn.cursor(cursor_factory=DictCursor)
     start_loop(cur)
 
 
