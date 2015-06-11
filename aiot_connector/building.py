@@ -52,7 +52,6 @@ def save_sensor_data(cur, device, context):
         cur.execute(sql, data)
 
 def save_persons_inside(cur, device, context):
-    # TODO
     cur.execute("""
         INSERT INTO
             ts_persons_inside

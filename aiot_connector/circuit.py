@@ -3,9 +3,10 @@ from dateutil import parser, rrule
 from datetime import datetime, timedelta
 
 from pytz import timezone
-import pytz
 
 import settings
+
+## Context
 
 def context_from_json_data(json_data):
     proto = json_data['proto/tm']
@@ -15,6 +16,9 @@ def context_from_json_data(json_data):
         'pulses': proto['msg_data'],
         'packet_number': proto['packet_number'],
     }
+
+
+## Pulses
 
 def save_pulses(cur, device, context):
     sql = """
@@ -32,6 +36,9 @@ def save_pulses(cur, device, context):
     }
 
     cur.execute(sql, data)
+
+
+## kWm
 
 def get_kwm_from_two_pulses(cur, device, packet_number):
     sql = """
@@ -94,6 +101,9 @@ def save_kwm(cur, device, context):
     }
     cur.execute(sql, data)
 
+
+## kWh
+
 def trunc_datetime_to_hours(datetime):
     return datetime.replace(minute=0, second=0, microsecond=0)
 
@@ -101,10 +111,10 @@ def get_first_kwm_timestamp_for_device(cur, device):
     cur.execute("""
             SELECT min(datetime)
             FROM ts_kwm
-            WHERE
-                device_key = %(device_key)s
-        """,
-        {'device_key': device['key']}
+            WHERE device_key = %(device_key)s
+        """, {
+            'device_key': device['key'],
+        }
     )
     return cur.fetchone()[0]
 
@@ -112,10 +122,10 @@ def get_last_kwh_timestamp_for_device(cur, device):
     cur.execute("""
             SELECT max(datetime)
             FROM ts_kwh
-            WHERE
-                device_key = %(device_key)s
-        """,
-        {'device_key': device['key']}
+            WHERE device_key = %(device_key)s
+        """, {
+            'device_key': device['key'],
+        }
     )
     return cur.fetchone()[0]
 
@@ -123,11 +133,10 @@ def kwh_measurement_exists(cur, device, hour_dt):
     cur.execute("""
             SELECT *
             FROM ts_kwh
-            WHERE
-                device_key = %(device_key)s
-                AND datetime = %(datetime)s
-        """,
-        {
+            WHERE device_key = %(device_key)s
+            AND datetime = %(datetime)s
+            LIMIT 1
+        """, {
             'device_key': device['key'],
             'datetime': hour_dt
         }
@@ -160,42 +169,40 @@ def generate_kwh(cur, device):
 def save_kwh(cur, device, hour_to_check):
     cur.execute("""
             SELECT value
-            FROM ts_kwm 
-            WHERE 
-                datetime BETWEEN %(dt_start)s AND %(dt_end)s
-                AND device_key = %(device_key)s
-        """,
-        {
+            FROM ts_kwm
+            WHERE datetime BETWEEN %(dt_start)s AND %(dt_end)s
+            AND device_key = %(device_key)s
+        """, {
             'dt_start': hour_to_check,
             'dt_end': hour_to_check + timedelta(hours=1),
-            'device_key': device['key']
+            'device_key': device['key'],
         }
     )
-    res = cur.fetchall()
+    rows = cur.fetchall()
 
-    number_of_kwm_measurements = len(res)
+    number_of_kwm_measurements = len(rows)
 
     if number_of_kwm_measurements < 30:
         if settings.DEBUG:
-            print '%d measurements for device %s at hour %s in kwm timeseries (30 required)' % (number_of_kwm_measurements, device['key'], hour_to_check)
+            print '%d measurements for device %s at hour %s in kwm timeseries (30 required)' % (
+                    number_of_kwm_measurements, device['key'], hour_to_check)
         return
 
-    sum = 0
-    for tuple in res:
-        sum += tuple[0]
+    sum = 0.0
+    for row in rows:
+        sum += row[0]
 
-    value = sum / number_of_kwm_measurements * 60
+    value = sum / number_of_kwm_measurements * 60.0
 
     cur.execute("""
             INSERT INTO
-                ts_kwh (datetime, device_key, value)
-            VALUES 
+                ts_kwh
+                (datetime, device_key, value)
+            VALUES
                 (%(datetime)s, %(device_key)s, %(value)s)
-        """,
-        {
+        """, {
             'datetime': str(hour_to_check),
             'device_key': device['key'],
             'value': value,
-
         }
     )
