@@ -1,5 +1,6 @@
 # coding: utf-8
 import dateutil.parser
+import math
 import random
 
 def context_from_json_data(json_data):
@@ -52,6 +53,23 @@ def save_sensor_data(cur, device, context):
         cur.execute(sql, data)
 
 def save_persons_inside(cur, device, context):
+    current_co2 = context['sensor_data']['co2']
+
+    cur.execute("""
+        SELECT (%(current_co2)s - MIN(value)) / STDDEV(value)
+        FROM ts_co2
+        WHERE device_key = %(device_key)s
+        AND value BETWEEN 50 AND 8000
+    """, {
+        'device_key': device['key'],
+        'current_co2': current_co2,
+    })
+    num_persons_inside = math.trunc(cur.fetchone()[0] - 0.2)
+
+    # Clamp between 0 and 15
+    num_persons_inside = min(num_persons_inside, 15)
+    num_persons_inside = max(num_persons_inside, 0)
+
     cur.execute("""
         INSERT INTO
             ts_persons_inside
@@ -61,7 +79,7 @@ def save_persons_inside(cur, device, context):
     """, {
         'timestamp': context['timestamp'],
         'device_key': device['key'],
-        'value': random.randint(0, 10),
+        'value': num_persons_inside,
     })
 
 def save_deviations(cur, device, context):
