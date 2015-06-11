@@ -10,7 +10,7 @@ class BuildingProcessor:
         # get relevant data from json
         proto = json_data['proto/tm']
         self.sensor_data = {
-            'temp': (((((proto['locator'] & 65535) / 4.0) / 16382.0) * 165.0) - 40.0),
+            'temperature': (((((proto['locator'] & 65535) / 4.0) / 16382.0) * 165.0) - 40.0),
             'co2': proto['msg_data'],
             'light': pow(proto['analog_io_0'] * 0.0015658, 10),
             'moist': ((proto['locator'] >> 16) / 16382.0) * 100.0,
@@ -20,6 +20,16 @@ class BuildingProcessor:
         self.timestamp = dateutil.parser.parse(json_data['datetime'])
         self.packet_number = proto['packet_number']
 
+        # filter out "bad" values
+        if self.sensor_data['temperature'] < 0:
+            self.sensor_data['temperature'] = None
+
+        if not (100 < self.sensor_data['co2'] < 8000):
+            self.sensor_data['co2'] = None
+
+        if self.sensor_data['moist'] == 0:
+            self.sensor_data['moist'] = None
+
     def process(self):
         self.save_sensor_data()
         self.save_persons_inside()
@@ -27,7 +37,7 @@ class BuildingProcessor:
 
     def save_sensor_data(self):
         type_to_table_name = {
-            'temp': 'ts_temperature',
+            'temperature': 'ts_temperature',
             'co2': 'ts_co2',
             'light': 'ts_light',
             'moist': 'ts_moist',
@@ -36,6 +46,10 @@ class BuildingProcessor:
         }
 
         for type, value in self.sensor_data.items():
+            # Might be a filtered-out value
+            if value is None:
+                continue
+
             table_name = type_to_table_name[type]
 
             self.cur.execute("""
@@ -56,6 +70,10 @@ class BuildingProcessor:
             })
 
     def save_persons_inside(self):
+        # Might be a filtered-out value
+        if self.sensor_data['co2'] is None:
+            return
+
         current_co2 = self.sensor_data['co2']
 
         self.cur.execute("""
@@ -85,25 +103,28 @@ class BuildingProcessor:
             'value': num_persons_inside,
         })
 
+    def add_deviation(self, deviation_type):
+        self.cur.execute("""
+            INSERT INTO
+                deviations
+                (datetime, device_key, deviation_type)
+            VALUES
+                (%(datetime)s, %(device_key)s, %(deviation_type)s)
+        """, {
+            'datetime': self.timestamp,
+            'device_key': self.device['key'],
+            'deviation_type': deviation_type,
+        })
+
     def save_deviations(self):
-        deviation_type = None
+        if self.sensor_data['co2'] is not None:
+            if not (100 < self.sensor_data['co2'] < 200):
+                self.add_deviation('co2')
 
-        if not (100 < self.sensor_data['co2'] < 200):
-            deviation_type = 'co2'
-        elif not (20 < self.sensor_data['moist'] < 60):
-            deviation_type = 'moist'
-        elif not (19 < self.sensor_data['temperature'] < 23):
-            deviation_type = 'temperature'
+        if self.sensor_data['moist'] is not None:
+            if not (20 < self.sensor_data['moist'] < 60):
+                self.add_deviation('moist')
 
-        if deviation_type:
-            self.cur.execute("""
-                INSERT INTO
-                    deviations
-                    (datetime, device_key, deviation_type)
-                VALUES
-                    (%(datetime)s, %(device_key)s, %(deviation_type)s)
-            """, {
-                'datetime': self.timestamp,
-                'device_key': self.device['key'],
-                'deviation_type': deviation_type,
-            })
+        if self.sensor_data['temperature'] is not None:
+            if not (19 < self.sensor_data['temperature'] < 23):
+                self.add_deviation('temperature')
