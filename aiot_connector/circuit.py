@@ -184,7 +184,7 @@ def save_kwh(cur, device, hour_to_check):
     for tuple in res:
         sum += tuple[0]
 
-    value = sum / number_of_kwm_measurements
+    value = sum / number_of_kwm_measurements * 60
 
     cur.execute("""
             INSERT INTO
