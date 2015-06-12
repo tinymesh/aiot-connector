@@ -2,6 +2,14 @@
 import dateutil.parser
 import math
 
+from pytz import timezone
+from datetime import timedelta, datetime
+
+import settings
+
+def trunc_datetime_to_minutes(datetime):
+    return datetime.replace(second=0, microsecond=0)
+
 class BuildingProcessor:
     def __init__(self, cur, device, json_data):
         self.cur = cur
@@ -34,6 +42,111 @@ class BuildingProcessor:
         self.save_sensor_data()
         self.save_persons_inside()
         self.save_deviations()
+        self.save_energy_productivity()
+
+    #TODO: Refactor me
+    def save_energy_productivity(self):
+        self.cur.execute("""
+                SELECT *
+                FROM ts_room_productivity
+                WHERE device_key = %(device_key)s
+                AND datetime =
+                    (SELECT MAX(datetime)
+                    FROM ts_room_productivity
+                    WHERE device_key = %(device_key)s)
+            """,
+            {
+                'device_key': self.device['key']
+            }
+        )
+
+        last_room_productivity = self.cur.fetchone()
+        if last_room_productivity is None:
+            if settings.DEBUG:
+                print 'Could not find room_productivity for device %s' % self.device['key']
+            return
+        last_room_productivity['datetime'] = trunc_datetime_to_minutes(last_room_productivity['datetime'])
+
+        self.cur.execute("""
+            SELECT *
+            FROM ts_energy_productivity
+            WHERE datetime = %(datetime)s
+                AND device_key = %(device_key)s
+            """,
+            {
+                'datetime': last_room_productivity['datetime'],
+                'device_key': self.device['key']
+            }
+        )
+
+        if self.cur.fetchone():
+            if settings.DEBUG:
+                print 'Energy productivity for device %s at minute %s already exists' % (self.device['key'],
+                        last_room_productivity['datetime'])
+            return
+
+
+        self.cur.execute("""
+                SELECT device_key
+                FROM map_device_power_circuit
+            """,
+            {}
+        )
+
+        power_circuit_device_keys = self.cur.fetchall()
+        oslo_tz = timezone('Europe/Oslo')
+
+        total_energy_consumption = 0
+        for power_circuit_device in power_circuit_device_keys:
+            self.cur.execute("""
+                SELECT AVG(value)
+                FROM ts_kwm
+                WHERE datetime >= %(five_minutes_ago)s
+                    AND device_key = %(device_key)s
+            """,
+            {
+                'five_minutes_ago': datetime.now(oslo_tz) - timedelta(minutes=5),
+                'device_key': power_circuit_device[0]
+            }
+            )
+            res = self.cur.fetchone()
+            if res[0] is None:
+                if settings.DEBUG:
+                    print 'Could not find kwm values within the last five minutes on device %s' % self.device['key']
+                return
+            total_energy_consumption += res[0]
+
+
+        total_area = 15000
+
+        self.cur.execute("""
+                SELECT area
+                FROM room
+                WHERE key = (SELECT room_key FROM map_device_room WHERE device_key = %(device_key)s)
+            """,
+            {
+                'device_key': self.device['key']
+            }
+        )
+
+        area = float(self.cur.fetchone()[0])
+
+        area_factor = total_area / area
+
+        value = last_room_productivity['value'] / total_energy_consumption * area_factor
+
+        self.cur.execute("""
+                INSERT INTO ts_energy_productivity (datetime, device_key, value)
+                VALUES (%(datetime)s, %(device_key)s, %(value)s)
+            """,
+            {
+                'datetime': last_room_productivity['datetime'],
+                'device_key': self.device['key'],
+                'value': value
+
+            }
+
+        )
 
     def save_sensor_data(self):
         type_to_table_name = {
