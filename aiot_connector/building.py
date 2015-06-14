@@ -1,6 +1,7 @@
 # coding: utf-8
 import dateutil.parser
 import math
+import psycopg2
 
 from pytz import timezone
 from datetime import timedelta, datetime
@@ -188,17 +189,26 @@ class BuildingProcessor:
             return
 
         current_co2 = self.sensor_data['co2']
+        print current_co2, self.device['key']
 
-        self.cur.execute("""
-            SELECT (%(current_co2)s - MIN(value)) / STDDEV(value) AS value
-            FROM ts_co2
-            WHERE device_key = %(device_key)s
-            AND value BETWEEN 50 AND 8000
-        """, {
-            'device_key': self.device['key'],
-            'current_co2': current_co2,
-        })
-        num_persons_inside = math.trunc(self.cur.fetchone()['value'] - 0.2)
+        try:
+            self.cur.execute("""
+                SELECT (%(current_co2)s - MIN(value)) / STDDEV(value) AS value
+                FROM ts_co2
+                WHERE device_key = %(device_key)s
+                AND value BETWEEN 50 AND 8000
+            """, {
+                'device_key': self.device['key'],
+                'current_co2': current_co2,
+            })
+        except psycopg2.DataError:
+            # Catches a division by zero error if current_co2 == MIN(value)
+            return
+
+        obj = self.cur.fetchone()
+        if not obj or not obj[0]:
+            return
+        num_persons_inside = math.trunc(obj['value'] - 0.2)
 
         # Clamp between 0 and 15
         num_persons_inside = min(num_persons_inside, 15)
