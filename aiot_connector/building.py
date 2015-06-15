@@ -247,6 +247,8 @@ class BuildingProcessor:
         num_persons_inside = min(num_persons_inside, 15)
         num_persons_inside = max(num_persons_inside, 0)
 
+        current_movement = self.sensor_data['movement']
+
         self.cur.execute("""
             INSERT INTO
                 ts_persons_inside
@@ -256,7 +258,7 @@ class BuildingProcessor:
         """, {
             'timestamp': self.timestamp,
             'device_key': self.device['key'],
-            'value': num_persons_inside,
+            'value': num_persons_inside if current_movement else 0
         })
 
     def add_deviation(self, deviation_type):
