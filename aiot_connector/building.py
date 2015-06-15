@@ -241,13 +241,13 @@ class BuildingProcessor:
 
     def save_deviations(self):
         if self.sensor_data['co2'] is not None:
-            if not (100 < self.sensor_data['co2'] < 200):
+            if self.sensor_data['co2'] >= 1000:
                 self.add_deviation('co2')
 
         if self.sensor_data['moist'] is not None:
-            if not (20 < self.sensor_data['moist'] < 60):
+            if not (30 < self.sensor_data['moist'] < 80):
                 self.add_deviation('moist')
 
         if self.sensor_data['temperature'] is not None:
-            if not (19 < self.sensor_data['temperature'] < 23):
+            if not (20 <= self.sensor_data['temperature'] <= 22):
                 self.add_deviation('temperature')
