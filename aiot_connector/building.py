@@ -60,22 +60,24 @@ class BuildingProcessor:
             }
         )
 
-        res = self.cur.fetchall()
+        rows = self.cur.fetchall()
 
-        if len(res) != 2 or not (not res[0] and res[1]):
+        if len(rows) != 2:
             return
 
+        last, next_to_last = rows
 
-        self.cur.execute("""
-                INSERT INTO ts_subjective_evaluation (datetime, value, device_key)
-                VALUES (%(datetime)s, %(value)s, %(device_key)s)
-            """,
-            {
-                'datetime': self.timestamp,
-                'value': randint(-1, 1), # Fake values for now..
-                'device_key': self.device['key']
-            }
-        )
+        if last['value'] and not next_to_last['value']:
+            self.cur.execute("""
+                    INSERT INTO ts_subjective_evaluation (datetime, value, device_key)
+                    VALUES (%(datetime)s, %(value)s, %(device_key)s)
+                """,
+                {
+                    'datetime': self.timestamp,
+                    'value': randint(-1, 1), # Fake values for now..
+                    'device_key': self.device['key']
+                }
+            )
 
 
     #TODO: Refactor me
@@ -151,7 +153,7 @@ class BuildingProcessor:
             total_energy_consumption += res[0]
 
 
-        total_area = 15000
+        total_area = 33000
 
         self.cur.execute("""
                 SELECT area
