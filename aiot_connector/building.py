@@ -2,6 +2,7 @@
 import dateutil.parser
 import math
 import psycopg2
+from random import randint
 
 from pytz import timezone
 from datetime import timedelta, datetime
@@ -42,8 +43,42 @@ class BuildingProcessor:
     def process(self):
         self.save_sensor_data()
         self.save_persons_inside()
+        self.save_subjective_evaluation()
         self.save_deviations()
         self.save_energy_productivity()
+
+    def save_subjective_evaluation(self):
+        self.cur.execute("""
+            SELECT value
+            FROM ts_movement
+            WHERE device_key = %(device_key)s
+            ORDER BY datetime DESC
+            LIMIT 2
+            """,
+            {
+                'device_key': self.device['key']
+            }
+        )
+
+        rows = self.cur.fetchall()
+
+        if len(rows) != 2:
+            return
+
+        last, next_to_last = rows
+
+        if last['value'] and not next_to_last['value']:
+            self.cur.execute("""
+                    INSERT INTO ts_subjective_evaluation (datetime, value, device_key)
+                    VALUES (%(datetime)s, %(value)s, %(device_key)s)
+                """,
+                {
+                    'datetime': self.timestamp,
+                    'value': randint(-1, 1), # Fake values for now..
+                    'device_key': self.device['key']
+                }
+            )
+
 
     #TODO: Refactor me
     def save_energy_productivity(self):
@@ -118,7 +153,7 @@ class BuildingProcessor:
             total_energy_consumption += res[0]
 
 
-        total_area = 15000
+        total_area = 33000
 
         self.cur.execute("""
                 SELECT area
@@ -214,6 +249,8 @@ class BuildingProcessor:
         num_persons_inside = min(num_persons_inside, 15)
         num_persons_inside = max(num_persons_inside, 0)
 
+        current_movement = self.sensor_data['movement']
+
         self.cur.execute("""
             INSERT INTO
                 ts_persons_inside
@@ -223,7 +260,7 @@ class BuildingProcessor:
         """, {
             'timestamp': self.timestamp,
             'device_key': self.device['key'],
-            'value': num_persons_inside,
+            'value': num_persons_inside if current_movement else 0
         })
 
     def add_deviation(self, deviation_type):
