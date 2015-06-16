@@ -6,6 +6,8 @@ from psycopg2.extras import DictCursor
 
 from building import BuildingProcessor
 from circuit import CircuitProcessor
+from wristband import WristbandProcessor
+
 import settings
 
 
@@ -61,6 +63,7 @@ class Connector:
         processor_map = {
             'building-sensor-v2': BuildingProcessor,
             'power-meter': CircuitProcessor,
+            'wristband': WristbandProcessor,
         }
 
         processor_class = processor_map.get(device['type'], None)
