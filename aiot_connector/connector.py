@@ -14,6 +14,36 @@ class Connector:
         self.conn = conn
         self.cur = conn.cursor(cursor_factory=DictCursor)
 
+    def _get_device_from_api(self, selector):
+        network_key, device_key = selector
+        url = 'https://http.cloud.tiny-mesh.com/v1/device/%s/%s' % (network_key, device_key)
+        req = requests.get(url, auth=(settings.TM_USERNAME, settings.TM_PASSWORD), stream=True)
+        return req.json()
+
+    def update_device_from_selector(self, selector):
+        device_data = self._get_device_from_api(selector)
+
+        self.cur.execute('UPDATE device SET type = %(type)s, name = %(name)s, uid = %(uid)s WHERE key = %(key)s', {
+            'key': device_data['key'],
+            'type': device_data['type'],
+            'name': device_data.get('name', None),
+            'uid': device_data['address']
+        })
+
+    def create_device_from_selector(self, selector):
+        device_data = self._get_device_from_api(selector)
+
+        self.cur.execute('INSERT INTO device (key, type, name, uid) VALUES (%(key)s, %(type)s, %(name)s, %(uid)s)', {
+            'key': device_data['key'],
+            'type': device_data['type'],
+            'name': device_data.get('name', None),
+            'uid': device_data.get('address')
+        })
+
+        device = self.get_device_from_selector(selector)
+        assert device
+        return device
+
     def get_device_from_selector(self, selector):
         network_key, device_key = selector
         self.cur.execute('SELECT key, type FROM device WHERE key = %(device_key)s', {
@@ -21,27 +51,12 @@ class Connector:
         })
         return self.cur.fetchone()
 
-    def create_device_from_selector(self, selector):
-        network_key, device_key = selector
-
-        url = 'https://http.cloud.tiny-mesh.com/v1/device/%s/%s' % (network_key, device_key)
-        req = requests.get(url, auth=(settings.TM_USERNAME, settings.TM_PASSWORD), stream=True)
-        device_data = req.json()
-
-        self.cur.execute('INSERT INTO device (key, type, name) VALUES (%(key)s, %(type)s, %(name)s)', {
-            'key': device_data['key'],
-            'type': device_data['type'],
-            'name': device_data.get('name', None),
-        })
-
-        device = self.get_device_from_selector(selector)
-        assert device
-        return device
-
     def process_json(self, json_data):
         device = self.get_device_from_selector(json_data['selector'])
         if device is None:
             device = self.create_device_from_selector(json_data['selector'])
+        elif settings.UPDATE_DEVICES:
+            self.update_device_from_selector(json_data['selector'])
 
         processor_map = {
             'building-sensor-v2': BuildingProcessor,

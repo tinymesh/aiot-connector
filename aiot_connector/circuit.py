@@ -23,7 +23,6 @@ class CircuitProcessor:
     def process(self):
         self.save_pulses()
         self.save_kwm()
-        # TODO: Doesn't make too much sense that a new measurement triggers this, should probably be in a cronjob
         self.generate_kwh()
 
     ## Pulses
@@ -69,7 +68,6 @@ class CircuitProcessor:
             return last_pulses[0]['value'] / 10000.0
         else:
             seconds_diff = (last_pulses[0]['datetime'] - last_pulses[1]['datetime']).total_seconds()
-            #TODO: Check why diff if zero sometimes
             multiplier = 60. / seconds_diff
 
             calibration_factor = 10000.0
