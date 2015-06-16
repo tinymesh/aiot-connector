@@ -77,7 +77,7 @@ class Connector:
             processor.process()
 
     def loop(self):
-        url = 'https://http.cloud.tiny-mesh.com/v1/message-query/%s/?stream=stream/%s&query=proto/tm.type:event' % (
+        url = 'https://http.cloud.tiny-mesh.com/v1/message-query/%s/?stream=stream/%s&query=proto/tm.type:event&data-encoding=binary' % (
             settings.TM_NETWORK,
             settings.TM_NETWORK,
         )
