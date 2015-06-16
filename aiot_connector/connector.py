@@ -26,20 +26,25 @@ class Connector:
         device_data = self._get_device_from_api(selector)
 
         self.cur.execute('UPDATE device SET type = %(type)s, name = %(name)s, uid = %(uid)s WHERE key = %(key)s', {
-            'key': device_data['key'],
-            'type': device_data['type'],
-            'name': device_data.get('name', None),
+            'key': device_data['key'].encode('utf-8'),
+            'type': device_data['type'].encode('utf-8'),
+            'name': device_data['name'].encode('utf-8'),
             'uid': device_data['address']
         })
 
     def create_device_from_selector(self, selector):
         device_data = self._get_device_from_api(selector)
+        if settings.DEBUG:
+            print
+            print '** creating device'
+            print device_data
+            print
 
         self.cur.execute('INSERT INTO device (key, type, name, uid) VALUES (%(key)s, %(type)s, %(name)s, %(uid)s)', {
-            'key': device_data['key'],
-            'type': device_data['type'],
-            'name': device_data.get('name', None),
-            'uid': device_data.get('address')
+            'key': device_data['key'].encode('utf-8'),
+            'type': device_data['type'].encode('utf-8'),
+            'name': device_data['name'].encode('utf-8'),
+            'uid': device_data['address']
         })
 
         device = self.get_device_from_selector(selector)
