@@ -47,7 +47,8 @@ class WristbandProcessor:
 
         if self.button_was_pushed:
             self.save_wristband_button_push()
-        else:
+
+        if self.nearest_device_key:
             self.save_wristband_location()
 
     def save_wristband_location(self):
