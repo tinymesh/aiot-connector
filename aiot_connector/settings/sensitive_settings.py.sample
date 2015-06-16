@@ -8,3 +8,6 @@ DB_HOST = 'dbhost'
 DB_NAME = 'dbname'
 DB_USER = 'dbuser'
 DB_PASSWORD = 'dbpassword'
+
+# Set to True if you want to update the devices from the API. Should be False in production.
+UPDATE_DEVICES = False
