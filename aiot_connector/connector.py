@@ -28,7 +28,7 @@ class Connector:
         self.cur.execute('UPDATE device SET type = %(type)s, name = %(name)s, uid = %(uid)s WHERE key = %(key)s', {
             'key': device_data['key'].encode('utf-8'),
             'type': device_data['type'].encode('utf-8'),
-            'name': device_data['name'].encode('utf-8'),
+            'name': device_data.get('name', u'N/A').encode('utf-8'),
             'uid': device_data['address']
         })
 
@@ -43,7 +43,7 @@ class Connector:
         self.cur.execute('INSERT INTO device (key, type, name, uid) VALUES (%(key)s, %(type)s, %(name)s, %(uid)s)', {
             'key': device_data['key'].encode('utf-8'),
             'type': device_data['type'].encode('utf-8'),
-            'name': device_data['name'].encode('utf-8'),
+            'name': device_data.get('name', u'N/A').encode('utf-8'),
             'uid': device_data['address']
         })
 
