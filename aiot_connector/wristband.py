@@ -9,8 +9,9 @@ def invert_endianess(n):
     return a ^ (b << 8) ^ (c << 16) ^ (d << 24)
 
 class WristbandProcessor:
-    def __init__(self, cur, device, json_data):
-        self.cur = cur
+    def __init__(self, connector, device, json_data):
+        self.connector = connector
+        self.cur = connector.cur
         self.device = device
 
         # get relevant data from json
@@ -66,6 +67,8 @@ class WristbandProcessor:
             'packet_number': self.packet_number,
         })
 
+        self.connector.do_hook('wristband-location', self)
+
     def save_wristband_button_push(self):
         self.cur.execute("""
             INSERT INTO
@@ -78,3 +81,5 @@ class WristbandProcessor:
             'timestamp': self.timestamp,
             'packet_number': self.packet_number,
         })
+
+        self.connector.do_hook('wristband-button-push', self)

@@ -71,10 +71,17 @@ class Connector:
             'wristband': WristbandProcessor,
         }
 
+        print '- device.type:', device['type']
+        print '- payload.detail:', json_data['proto/tm']['detail']
+        print '- payload.type:', json_data['proto/tm']['type']
         processor_class = processor_map.get(device['type'], None)
         if processor_class:
-            processor = processor_class(self.cur, device, json_data)
+            processor = processor_class(self, device, json_data)
             processor.process()
+
+    def do_hook(self, hook_name, processor):
+        if hook_name in settings.HOOKS:
+            settings.HOOKS[hook_name](self, processor)
 
     def loop(self):
         url = 'https://http.cloud.tiny-mesh.com/v1/message-query/%s/?stream=stream/%s&query=proto/tm.type:event&data-encoding=binary' % (

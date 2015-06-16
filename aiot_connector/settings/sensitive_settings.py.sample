@@ -11,3 +11,6 @@ DB_PASSWORD = 'dbpassword'
 
 # Set to True if you want to update the devices from the API. Should be False in production.
 UPDATE_DEVICES = False
+
+# Register your hooks here.
+HOOKS = {}

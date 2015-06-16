@@ -8,3 +8,4 @@
 /.virtualenv
 /.vagrant
 /aiot_connector/settings/sensitive_settings.py
+/aiot_connector/local/

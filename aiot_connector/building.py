@@ -12,8 +12,9 @@ def trunc_datetime_to_minutes(datetime):
     return datetime.replace(second=0, microsecond=0)
 
 class BuildingProcessor:
-    def __init__(self, cur, device, json_data):
-        self.cur = cur
+    def __init__(self, connector, device, json_data):
+        self.connector = connector
+        self.cur = connector.cur
         self.device = device
 
         # get relevant data from json
@@ -212,6 +213,8 @@ class BuildingProcessor:
                 'value': value,
                 'packet_number': self.packet_number,
             })
+
+        self.connector.do_hook('sensor-data', self)
 
 
     # Persons inside

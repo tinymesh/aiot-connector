@@ -10,8 +10,9 @@ def trunc_datetime_to_hours(datetime):
     return datetime.replace(minute=0, second=0, microsecond=0)
 
 class CircuitProcessor:
-    def __init__(self, cur, device, json_data):
-        self.cur = cur
+    def __init__(self, connector, device, json_data):
+        self.connector = connector
+        self.cur = connector.cur
         self.device = device
 
         proto = json_data['proto/tm']
