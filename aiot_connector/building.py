@@ -70,6 +70,15 @@ class BuildingProcessor:
 
         last, next_to_last = rows
 
+        random_value = randint(0,9)
+        if random_value < 4:
+            value = -1
+        elif random_value < 8:
+            value = 0 
+        else:
+            value = 1
+
+
         if last['value'] and not next_to_last['value']:
             self.cur.execute("""
                     INSERT INTO ts_subjective_evaluation (datetime, value, device_key)
@@ -77,7 +86,7 @@ class BuildingProcessor:
                 """,
                 {
                     'datetime': self.timestamp,
-                    'value': randint(-1, 1), # Fake values for now..
+                    'value': value,
                     'device_key': self.device['key']
                 }
             )
